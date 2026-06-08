@@ -120,6 +120,7 @@ class Defaults:
     temp_c: float = 25.0
     ncurves: int = 10
     gate_delay_ms: float = 1000.0
+    curve_delay_ms: float = 1000.0
 
 # UI choices (Comboboxes)
 H_CHOICES = ("0.1", "0.2", "0.5", "1", "2", "5")
@@ -223,6 +224,7 @@ class MeasurementParams:
     step_voltage: float
     step_offset: float
     gate_delay_ms: float
+    curve_delay_ms: float
 
     def validate(self) -> None:
         if self.gate_source == GATE_SRC_EXTERNAL:
@@ -250,6 +252,8 @@ class MeasurementParams:
             raise ValueError("Peak power must be 300 or 3000 W.")
         if self.gate_delay_ms < 100:
             raise ValueError("Gate settling delay must be at least 100 ms.")
+        if self.curve_delay_ms < 100:
+            raise ValueError("Inter-curve delay must be at least 100 ms.")
 
     @property
     def smu_i_comp_A(self) -> float:
@@ -349,6 +353,13 @@ class MeasurementController:
                 # Reset SRQ for next iteration
                 self.tek.discard_and_disable_all_events()
                 self.tek.enable_srq_event()
+
+                # Delay between curves (except last one)
+                if i < N:
+                    delay_s = settings.measurement.curve_delay_ms / 1000.0
+                    on_status(f"Waiting {settings.measurement.curve_delay_ms:.0f} ms before next curve...")
+                    sleep(delay_s)
+
                 on_progress((i / N) * 100.0)
             # Compute and plot mean if not stopped (only when N > 1)
             if not self._stop_event.is_set():
@@ -579,6 +590,7 @@ class MeasurementGUI:
         self.var_tr_h = tk.StringVar(value=str(Defaults().tr_h))
         self.var_tr_v = tk.StringVar(value=str(Defaults().tr_v))
         self.var_tr_vce = tk.StringVar(value=str(Defaults().tr_vce_pct))
+        self.var_curve_delay = tk.StringVar(value=str(Defaults().curve_delay_ms))
         # Gate bias selection
         self.var_gate_source = tk.StringVar(value=GATE_SRC_EXTERNAL)
         self.var_step_voltage = tk.StringVar(value="0.2")
@@ -694,6 +706,16 @@ class MeasurementGUI:
             width=10,
             textvariable=self.var_gate_delay
         )
+        ttk.Label(gatef, text="Delay between curves (ms):").grid(row=4, column=2, sticky=tk.W, pady=2)
+        self.sb_curve_delay = tk.Spinbox(
+            gatef,
+            from_=100,
+            to=60000,
+            increment=100,
+            width=10,
+            textvariable=self.var_curve_delay
+        )
+        self.sb_curve_delay.grid(row=4, column=3, sticky=tk.W, padx=5)
         self.sb_gate_delay.grid(row=3, column=3, sticky=tk.W, padx=5)
         # Internal (Tek371) controls
         ttk.Label(gatef, text=UI.L_STEP_V).grid(row=3, column=0, sticky=tk.W, pady=2)
@@ -1038,6 +1060,7 @@ class MeasurementGUI:
             "Step Voltage (V)": self.var_step_voltage.get(),
             "Step Offset": self.var_step_offset.get(),
             "Gate delay (ms)": self.var_gate_delay.get(),
+            "Curve delay (ms)": self.var_curve_delay.get(),
         }
         file_set = {
             "output_folder": self.folder_entry.get(),
@@ -1090,6 +1113,7 @@ class MeasurementGUI:
                 if "Step Voltage (V)" in meas: self.var_step_voltage.set(str(meas["Step Voltage (V)"]))
                 if "Step Offset" in meas: self.var_step_offset.set(str(meas["Step Offset"]))
                 if "Gate delay (ms)" in meas: self.var_gate_delay.set(str(meas["Gate delay (ms)"]))
+                if "Curve delay (ms)" in meas: self.var_curve_delay.set(str(meas["Curve delay (ms)"]))
             if "file" in settings:
                 fs = settings["file"]
                 if "output_folder" in fs:
@@ -1289,6 +1313,7 @@ class MeasurementGUI:
             step_voltage=float(self.var_step_voltage.get()) if self.var_gate_source.get() == GATE_SRC_INTERNAL else 0.0,
             step_offset=float(self.var_step_offset.get()) if self.var_gate_source.get() == GATE_SRC_INTERNAL else 0.0,
             gate_delay_ms=float(self.var_gate_delay.get()),
+            curve_delay_ms=float(self.var_curve_delay.get()),
         )
         folder = self.folder_entry.get()
         if not folder:
