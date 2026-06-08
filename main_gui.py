@@ -119,6 +119,7 @@ class Defaults:
     dev: str = "dev0"
     temp_c: float = 25.0
     ncurves: int = 10
+    gate_delay_ms: float = 1000.0
 
 # UI choices (Comboboxes)
 H_CHOICES = ("0.1", "0.2", "0.5", "1", "2", "5")
@@ -221,6 +222,7 @@ class MeasurementParams:
     gate_source: str
     step_voltage: float
     step_offset: float
+    gate_delay_ms: float
 
     def validate(self) -> None:
         if self.gate_source == GATE_SRC_EXTERNAL:
@@ -246,6 +248,8 @@ class MeasurementParams:
             raise ValueError(f"{UI.L_TR_VCE} must be between 0 and 100 (got {self.tr_vce_pct}).")
         if self.tr_peak_power not in (300, 3000):
             raise ValueError("Peak power must be 300 or 3000 W.")
+        if self.gate_delay_ms < 100:
+            raise ValueError("Gate settling delay must be at least 100 ms.")
 
     @property
     def smu_i_comp_A(self) -> float:
@@ -322,6 +326,9 @@ class MeasurementController:
 
         if gate_source == GATE_SRC_EXTERNAL:
             self.k24.enable_source()
+            delay_s = settings.measurement.gate_delay_ms / 1000.0
+            on_status(f"Stabilizing gate ({settings.measurement.gate_delay_ms:.0f} ms)...")
+            sleep(delay_s)
 
         try:
             for i in range(1, N + 1):
@@ -576,6 +583,7 @@ class MeasurementGUI:
         self.var_gate_source = tk.StringVar(value=GATE_SRC_EXTERNAL)
         self.var_step_voltage = tk.StringVar(value="0.2")
         self.var_step_offset = tk.StringVar(value="0.00")
+        self.var_gate_delay = tk.StringVar(value=str(Defaults().gate_delay_ms))
         # File vars
         self.var_vge = tk.StringVar(value=self.var_smu_v.get())
         self.var_temp = tk.StringVar(value=str(Defaults().temp_c))
@@ -677,6 +685,16 @@ class MeasurementGUI:
         ttk.Label(gatef, text=UI.L_SMU_I_COMP).grid(row=2, column=0, sticky=tk.W, pady=2)
         self.sb_i_comp = tk.Spinbox(gatef, from_=0.01, to=1.0, increment=0.01, width=12, textvariable=self.var_i_comp)
         self.sb_i_comp.grid(row=2, column=1, sticky=tk.W, padx=5)
+        ttk.Label(gatef, text="Gate delay (ms):").grid(row=3, column=2, sticky=tk.W, pady=2)
+        self.sb_gate_delay = tk.Spinbox(
+            gatef,
+            from_=100,
+            to=60000,
+            increment=100,
+            width=10,
+            textvariable=self.var_gate_delay
+        )
+        self.sb_gate_delay.grid(row=3, column=3, sticky=tk.W, padx=5)
         # Internal (Tek371) controls
         ttk.Label(gatef, text=UI.L_STEP_V).grid(row=3, column=0, sticky=tk.W, pady=2)
         self.cb_step_v = ttk.Combobox(gatef, values=STEP_V_CHOICES, state="readonly", width=11, textvariable=self.var_step_voltage)
@@ -1015,10 +1033,11 @@ class MeasurementGUI:
             UI.L_TR_H: self.var_tr_h.get(),
             UI.L_TR_V: self.var_tr_v.get(),
             UI.L_TR_VCE: self.var_tr_vce.get(),
-UI.L_TR_PK_PWR: self.var_tr_peak_power.get(),
+            UI.L_TR_PK_PWR: self.var_tr_peak_power.get(),
             "Gate Bias Source": self.var_gate_source.get(),
             "Step Voltage (V)": self.var_step_voltage.get(),
             "Step Offset": self.var_step_offset.get(),
+            "Gate delay (ms)": self.var_gate_delay.get(),
         }
         file_set = {
             "output_folder": self.folder_entry.get(),
@@ -1070,6 +1089,7 @@ UI.L_TR_PK_PWR: self.var_tr_peak_power.get(),
                 if "Gate Bias Source" in meas: self.var_gate_source.set(str(meas["Gate Bias Source"]))
                 if "Step Voltage (V)" in meas: self.var_step_voltage.set(str(meas["Step Voltage (V)"]))
                 if "Step Offset" in meas: self.var_step_offset.set(str(meas["Step Offset"]))
+                if "Gate delay (ms)" in meas: self.var_gate_delay.set(str(meas["Gate delay (ms)"]))
             if "file" in settings:
                 fs = settings["file"]
                 if "output_folder" in fs:
@@ -1268,6 +1288,7 @@ UI.L_TR_PK_PWR: self.var_tr_peak_power.get(),
             gate_source=self.var_gate_source.get(),
             step_voltage=float(self.var_step_voltage.get()) if self.var_gate_source.get() == GATE_SRC_INTERNAL else 0.0,
             step_offset=float(self.var_step_offset.get()) if self.var_gate_source.get() == GATE_SRC_INTERNAL else 0.0,
+            gate_delay_ms=float(self.var_gate_delay.get()),
         )
         folder = self.folder_entry.get()
         if not folder:
