@@ -119,8 +119,8 @@ class Defaults:
     dev: str = "dev0"
     temp_c: float = 25.0
     ncurves: int = 10
-    gate_delay_ms: float = 1000.0
-    curve_delay_ms: float = 1000.0
+    gate_delay_s: float = 1
+    curve_delay_s: float = 1
     ignore_first_curve: bool = False
 
 # UI choices (Comboboxes)
@@ -227,8 +227,8 @@ class MeasurementParams:
     gate_source: str
     step_voltage: float
     step_offset: float
-    gate_delay_ms: float
-    curve_delay_ms: float
+    gate_delay_s: float
+    curve_delay_s: float
     ignore_first_curve: bool
 
     def validate(self) -> None:
@@ -255,10 +255,10 @@ class MeasurementParams:
             raise ValueError(f"{UI.L_TR_VCE} must be between 0 and 100 (got {self.tr_vce_pct}).")
         if self.tr_peak_power not in (300, 3000):
             raise ValueError("Peak power must be 300 or 3000 W.")
-        if self.gate_delay_ms < 100:
-            raise ValueError("Gate settling delay must be at least 100 ms.")
-        if self.curve_delay_ms < 100:
-            raise ValueError("Inter-curve delay must be at least 100 ms.")
+        if self.gate_delay_s < 1.0:
+            raise ValueError("Gate settling delay must be at least 1 second.")
+        if self.curve_delay_s < 1.0:
+            raise ValueError("Inter-curve delay must be at least 1 second.")
 
     @property
     def smu_i_comp_A(self) -> float:
@@ -335,8 +335,8 @@ class MeasurementController:
 
         if gate_source == GATE_SRC_EXTERNAL:
             self.k24.enable_source()
-            delay_s = settings.measurement.gate_delay_ms / 1000.0
-            on_status(f"Stabilizing gate ({settings.measurement.gate_delay_ms:.0f} ms)...")
+            delay_s = settings.measurement.gate_delay_s
+            on_status(f"Stabilizing gate ({settings.measurement.gate_delay_s:.0f} s)...")
             sleep(delay_s)
 
         try:
@@ -361,8 +361,8 @@ class MeasurementController:
 
                 # Delay between curves (except last one)
                 if i < N:
-                    delay_s = settings.measurement.curve_delay_ms / 1000.0
-                    on_status(f"Waiting {settings.measurement.curve_delay_ms:.0f} ms before next curve...")
+                    delay_s = settings.measurement.curve_delay_s
+                    on_status(f"Waiting {settings.measurement.curve_delay_s:.0f} s before next curve...")
                     sleep(delay_s)
 
                 on_progress((i / N) * 100.0)
@@ -602,12 +602,12 @@ class MeasurementGUI:
         self.var_tr_h = tk.StringVar(value=str(Defaults().tr_h))
         self.var_tr_v = tk.StringVar(value=str(Defaults().tr_v))
         self.var_tr_vce = tk.StringVar(value=str(Defaults().tr_vce_pct))
-        self.var_curve_delay = tk.StringVar(value=str(Defaults().curve_delay_ms))
+        self.var_curve_delay = tk.StringVar(value=str(Defaults().curve_delay_s))
         # Gate bias selection
         self.var_gate_source = tk.StringVar(value=GATE_SRC_EXTERNAL)
         self.var_step_voltage = tk.StringVar(value="0.2")
         self.var_step_offset = tk.StringVar(value="0.00")
-        self.var_gate_delay = tk.StringVar(value=str(Defaults().gate_delay_ms))
+        self.var_gate_delay = tk.StringVar(value=str(Defaults().gate_delay_s))
         # File vars
         self.var_vge = tk.StringVar(value=self.var_smu_v.get())
         self.var_temp = tk.StringVar(value=str(Defaults().temp_c))
@@ -709,25 +709,15 @@ class MeasurementGUI:
         ttk.Label(gatef, text=UI.L_SMU_I_COMP).grid(row=2, column=0, sticky=tk.W, pady=2)
         self.sb_i_comp = tk.Spinbox(gatef, from_=0.01, to=1.0, increment=0.01, width=12, textvariable=self.var_i_comp)
         self.sb_i_comp.grid(row=2, column=1, sticky=tk.W, padx=5)
-        ttk.Label(gatef, text="Gate delay (ms):").grid(row=3, column=2, sticky=tk.W, pady=2)
+        ttk.Label(gatef, text="Gate delay (s):").grid(row=3, column=2, sticky=tk.W, pady=2)
         self.sb_gate_delay = tk.Spinbox(
             gatef,
-            from_=100,
-            to=60000,
-            increment=100,
+            from_=1,
+            to=3600,
+            increment=1,
             width=10,
             textvariable=self.var_gate_delay
         )
-        ttk.Label(gatef, text="Delay between curves (ms):").grid(row=4, column=2, sticky=tk.W, pady=2)
-        self.sb_curve_delay = tk.Spinbox(
-            gatef,
-            from_=100,
-            to=60000,
-            increment=100,
-            width=10,
-            textvariable=self.var_curve_delay
-        )
-        self.sb_curve_delay.grid(row=4, column=3, sticky=tk.W, padx=5)
         self.sb_gate_delay.grid(row=3, column=3, sticky=tk.W, padx=5)
         # Internal (Tek371) controls
         ttk.Label(gatef, text=UI.L_STEP_V).grid(row=3, column=0, sticky=tk.W, pady=2)
@@ -758,6 +748,16 @@ class MeasurementGUI:
         self.var_tr_peak_power = tk.StringVar(value="300")
         self.cb_tr_peak_power = ttk.Combobox(param, values=("300", "3000"), width=11, state="readonly", textvariable=self.var_tr_peak_power)
         self.cb_tr_peak_power.grid(row=3, column=1, sticky=tk.W, padx=5)
+        ttk.Label(param, text="Delay between curves (s):").grid(row=4, column=0, sticky=tk.W, pady=2)
+        self.sb_curve_delay = tk.Spinbox(
+            param,
+            from_=1,
+            to=3600,
+            increment=1,
+            width=12,
+            textvariable=self.var_curve_delay
+        )
+        self.sb_curve_delay.grid(row=4, column=1, sticky=tk.W, padx=5)
 
         # ----- File Settings -----
         filef = ttk.LabelFrame(left, text="File Settings", padding="10")
@@ -785,7 +785,7 @@ class MeasurementGUI:
             text="Ignore first curve when computing mean",
             variable=self.var_ignore_first
         )
-        self.chk_ignore_first.grid(row=6, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
+        self.chk_ignore_first.grid(row=4, column=2, sticky=tk.W, padx=(10, 0))
         # ----- Control Buttons -----
         btns = ttk.Frame(left); btns.grid(row=4, column=0, pady=10, sticky=tk.W + tk.E)
         self.start_btn = ttk.Button(btns, text="Start Measurement", command=self.start_measurement, state="disabled")
@@ -1076,8 +1076,8 @@ class MeasurementGUI:
             "Gate Bias Source": self.var_gate_source.get(),
             "Step Voltage (V)": self.var_step_voltage.get(),
             "Step Offset": self.var_step_offset.get(),
-            "Gate delay (ms)": self.var_gate_delay.get(),
-            "Curve delay (ms)": self.var_curve_delay.get(),
+            "Gate delay (s)": self.var_gate_delay.get(),
+            "Curve delay (s)": self.var_curve_delay.get(),
             "Ignore first curve": self.var_ignore_first.get(),
         }
         file_set = {
@@ -1130,8 +1130,8 @@ class MeasurementGUI:
                 if "Gate Bias Source" in meas: self.var_gate_source.set(str(meas["Gate Bias Source"]))
                 if "Step Voltage (V)" in meas: self.var_step_voltage.set(str(meas["Step Voltage (V)"]))
                 if "Step Offset" in meas: self.var_step_offset.set(str(meas["Step Offset"]))
-                if "Gate delay (ms)" in meas: self.var_gate_delay.set(str(meas["Gate delay (ms)"]))
-                if "Curve delay (ms)" in meas: self.var_curve_delay.set(str(meas["Curve delay (ms)"]))
+                if "Gate delay (s)" in meas: self.var_gate_delay.set(str(meas["Gate delay (s)"]))
+                if "Curve delay (s)" in meas: self.var_curve_delay.set(str(meas["Curve delay (s)"]))
                 if "Ignore first curve" in meas: self.var_ignore_first.set(bool(meas["Ignore first curve"]))
             if "file" in settings:
                 fs = settings["file"]
@@ -1331,8 +1331,8 @@ class MeasurementGUI:
             gate_source=self.var_gate_source.get(),
             step_voltage=float(self.var_step_voltage.get()) if self.var_gate_source.get() == GATE_SRC_INTERNAL else 0.0,
             step_offset=float(self.var_step_offset.get()) if self.var_gate_source.get() == GATE_SRC_INTERNAL else 0.0,
-            gate_delay_ms=float(self.var_gate_delay.get()),
-            curve_delay_ms=float(self.var_curve_delay.get()),
+            gate_delay_s=float(self.var_gate_delay.get()),
+            curve_delay_s=float(self.var_curve_delay.get()),
             ignore_first_curve=self.var_ignore_first.get(),
         )
         folder = self.folder_entry.get()
