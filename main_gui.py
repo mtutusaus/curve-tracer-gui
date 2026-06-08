@@ -17,7 +17,7 @@ from tkinter import ttk, filedialog, scrolledtext, messagebox
 import pyvisa
 import pandas as pd
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import numpy as np
 
 from tek371 import Tek371
@@ -709,7 +709,7 @@ class MeasurementGUI:
         ttk.Label(gatef, text=UI.L_SMU_I_COMP).grid(row=2, column=0, sticky=tk.W, pady=2)
         self.sb_i_comp = tk.Spinbox(gatef, from_=0.01, to=1.0, increment=0.01, width=12, textvariable=self.var_i_comp)
         self.sb_i_comp.grid(row=2, column=1, sticky=tk.W, padx=5)
-        ttk.Label(gatef, text="Gate delay (s):").grid(row=3, column=2, sticky=tk.W, pady=2)
+        ttk.Label(gatef, text="Gate delay (s):").grid(row=5, column=2, sticky=tk.W, pady=2)
         self.sb_gate_delay = tk.Spinbox(
             gatef,
             from_=1,
@@ -718,7 +718,7 @@ class MeasurementGUI:
             width=10,
             textvariable=self.var_gate_delay
         )
-        self.sb_gate_delay.grid(row=3, column=3, sticky=tk.W, padx=5)
+        self.sb_gate_delay.grid(row=5, column=3, sticky=tk.W, padx=5)
         # Internal (Tek371) controls
         ttk.Label(gatef, text=UI.L_STEP_V).grid(row=3, column=0, sticky=tk.W, pady=2)
         self.cb_step_v = ttk.Combobox(gatef, values=STEP_V_CHOICES, state="readonly", width=11, textvariable=self.var_step_voltage)
@@ -748,7 +748,7 @@ class MeasurementGUI:
         self.var_tr_peak_power = tk.StringVar(value="300")
         self.cb_tr_peak_power = ttk.Combobox(param, values=("300", "3000"), width=11, state="readonly", textvariable=self.var_tr_peak_power)
         self.cb_tr_peak_power.grid(row=3, column=1, sticky=tk.W, padx=5)
-        ttk.Label(param, text="Delay between curves (s):").grid(row=4, column=0, sticky=tk.W, pady=2)
+        ttk.Label(param, text="Delay between curves (s):").grid(row=3, column=2, sticky=tk.W, pady=2)
         self.sb_curve_delay = tk.Spinbox(
             param,
             from_=1,
@@ -757,7 +757,7 @@ class MeasurementGUI:
             width=12,
             textvariable=self.var_curve_delay
         )
-        self.sb_curve_delay.grid(row=4, column=1, sticky=tk.W, padx=5)
+        self.sb_curve_delay.grid(row=3, column=3, sticky=tk.W, padx=5)
 
         # ----- File Settings -----
         filef = ttk.LabelFrame(left, text="File Settings", padding="10")
@@ -808,11 +808,22 @@ class MeasurementGUI:
         right.columnconfigure(0, weight=1); right.rowconfigure(0, weight=1)
         plot_frame = ttk.Frame(right)
         plot_frame.grid(row=0, column=0, sticky=tk.N + tk.S + tk.E + tk.W)
-        plot_frame.columnconfigure(0, weight=1); plot_frame.rowconfigure(0, weight=1)
+        plot_frame.columnconfigure(0, weight=1)
+        plot_frame.rowconfigure(0, weight=1)
+        plot_frame.rowconfigure(1, weight=0)
         self.fig, self.ax = plt.subplots(figsize=(8, 5), dpi=100)
         self._style_axes()
         self.canvas = FigureCanvasTkAgg(self.fig, master=plot_frame)
         self.canvas.get_tk_widget().grid(row=0, column=0, sticky=tk.N + tk.S + tk.E + tk.W)
+
+        # Create a dedicated frame for the toolbar
+        toolbar_frame = ttk.Frame(plot_frame)
+        toolbar_frame.grid(row=1, column=0, sticky=tk.W)
+
+        # Create toolbar inside that frame (it will use pack internally)
+        self.toolbar = NavigationToolbar2Tk(self.canvas, toolbar_frame)
+        self.toolbar.update()
+
         self.fig.tight_layout()
 
         # Traces & initial state
@@ -1402,6 +1413,14 @@ class MeasurementGUI:
         except Exception:
             pass
         self._update_connect_state(); self._sync_vge_source()
+        # Gate delay only relevant for external SMU
+        try:
+            if internal:
+                self.sb_gate_delay.configure(state="disabled")
+            else:
+                self.sb_gate_delay.configure(state="normal")
+        except Exception:
+            pass
 
     def _sync_vge_source(self) -> None:
         if self.var_gate_source.get() == GATE_SRC_INTERNAL:
