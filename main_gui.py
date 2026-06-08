@@ -121,6 +121,7 @@ class Defaults:
     ncurves: int = 10
     gate_delay_ms: float = 1000.0
     curve_delay_ms: float = 1000.0
+    ignore_first_curve: bool = False
 
 # UI choices (Comboboxes)
 H_CHOICES = ("0.1", "0.2", "0.5", "1", "2", "5")
@@ -179,8 +180,11 @@ def ensure_folder_writable(path: Path) -> None:
         except Exception:
             pass
 
-def compute_mean_file(folder_path: Path, base_name: str, N: int) -> Path:
-    filepaths = [folder_path / f"{base_name}_{i}.csv" for i in range(1, N + 1)]
+def compute_mean_file(folder_path: Path, base_name: str, N: int, ignore_first: bool = False) -> Path:
+    start_idx = 2 if ignore_first and N > 1 else 1
+    filepaths = [folder_path / f"{base_name}_{i}.csv" for i in range(start_idx, N + 1)]
+    if len(filepaths) == 0:
+        raise ValueError("No curves left to compute mean (all curves excluded).")
     if not all(p.exists() for p in filepaths):
         missing = [str(p.name) for p in filepaths if not p.exists()]
         raise FileNotFoundError(f"Missing curve files: {missing}")
@@ -225,6 +229,7 @@ class MeasurementParams:
     step_offset: float
     gate_delay_ms: float
     curve_delay_ms: float
+    ignore_first_curve: bool
 
     def validate(self) -> None:
         if self.gate_source == GATE_SRC_EXTERNAL:
@@ -365,7 +370,12 @@ class MeasurementController:
             if not self._stop_event.is_set():
                 if N > 1:
                     on_status(UI.STATUS_MEAN)
-                    mean_path = compute_mean_file(folder, base, N)
+                    mean_path = compute_mean_file(
+                        folder,
+                        base,
+                        N,
+                        ignore_first=settings.measurement.ignore_first_curve
+                    )
                     on_plot_mean_csv(mean_path)
                 on_status(UI.STATUS_DONE.format(folder=folder))
                 on_progress(100.0)
@@ -571,6 +581,8 @@ class MeasurementGUI:
         self.notebook.add(self.iv_tab, text="I-V Measurement")
         self.notebook.add(self.tsep_tab, text=UI.TAB_TSEP)
 
+        self.var_ignore_first = tk.BooleanVar(value=Defaults().ignore_first_curve)
+
         # Instruments
         self.tek371: Optional[Tek371] = None
         self.keithley: Optional[Keithley2400] = None
@@ -768,7 +780,12 @@ class MeasurementGUI:
         self.sb_ncurves.grid(row=4, column=1, sticky=tk.W, padx=5); self.file_entries[UI.L_NCURVES] = self.sb_ncurves
         ttk.Button(filef, text="Export Settings", command=self.export_settings).grid(row=5, column=0, sticky=tk.W, pady=(8, 0))
         ttk.Button(filef, text="Import Settings", command=self.import_settings).grid(row=5, column=1, sticky=tk.W, pady=(8, 0))
-
+        self.chk_ignore_first = ttk.Checkbutton(
+            filef,
+            text="Ignore first curve when computing mean",
+            variable=self.var_ignore_first
+        )
+        self.chk_ignore_first.grid(row=6, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
         # ----- Control Buttons -----
         btns = ttk.Frame(left); btns.grid(row=4, column=0, pady=10, sticky=tk.W + tk.E)
         self.start_btn = ttk.Button(btns, text="Start Measurement", command=self.start_measurement, state="disabled")
@@ -1061,6 +1078,7 @@ class MeasurementGUI:
             "Step Offset": self.var_step_offset.get(),
             "Gate delay (ms)": self.var_gate_delay.get(),
             "Curve delay (ms)": self.var_curve_delay.get(),
+            "Ignore first curve": self.var_ignore_first.get(),
         }
         file_set = {
             "output_folder": self.folder_entry.get(),
@@ -1114,6 +1132,7 @@ class MeasurementGUI:
                 if "Step Offset" in meas: self.var_step_offset.set(str(meas["Step Offset"]))
                 if "Gate delay (ms)" in meas: self.var_gate_delay.set(str(meas["Gate delay (ms)"]))
                 if "Curve delay (ms)" in meas: self.var_curve_delay.set(str(meas["Curve delay (ms)"]))
+                if "Ignore first curve" in meas: self.var_ignore_first.set(bool(meas["Ignore first curve"]))
             if "file" in settings:
                 fs = settings["file"]
                 if "output_folder" in fs:
@@ -1314,6 +1333,7 @@ class MeasurementGUI:
             step_offset=float(self.var_step_offset.get()) if self.var_gate_source.get() == GATE_SRC_INTERNAL else 0.0,
             gate_delay_ms=float(self.var_gate_delay.get()),
             curve_delay_ms=float(self.var_curve_delay.get()),
+            ignore_first_curve=self.var_ignore_first.get(),
         )
         folder = self.folder_entry.get()
         if not folder:
