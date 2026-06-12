@@ -99,6 +99,51 @@ class UI:
 
     TSEP_STATUS_READY = "Ready"
 
+    # --- General ---
+    STATUS_READY = "Ready"
+    STATUS_CONNECTING_TEK = "Connecting to Tek371..."
+    STATUS_CONNECTING_K = "Connecting to Keithley 2400..."
+    STATUS_CONNECTING_TSEP_VGE = "Connecting VGE SMU..."
+    STATUS_CONNECTING_TSEP_VCE = "Connecting VCE SMU..."
+
+    STATUS_CONNECTED = "Connected"
+    STATUS_CONNECTION_FAILED = "Connection failed"
+
+    STATUS_STOPPING = "Stopping measurement..."
+    STATUS_PLOT_CLEARED = "Plot cleared"
+    STATUS_SETTINGS_APPLIED = "Settings applied successfully"
+    STATUS_SETTINGS_EXPORTED = "Settings exported successfully"
+    STATUS_SETTINGS_IMPORTED = "Settings imported successfully"
+
+    STATUS_SCAN_FOUND = "Found {n} GPIB device(s)"
+    STATUS_SCAN_NONE = "No GPIB devices found"
+
+    # --- Waiting / delays ---
+    STATUS_WAIT_CURVE = "Waiting {t} s before next curve..."
+    STATUS_GATE_STABLE = "Stabilizing gate ({t} s)..."
+
+    # --- TSEP ---
+    TSEP_STATUS_CONNECTING = "Connecting TSEP instruments..."
+    TSEP_STATUS_CONFIG_VGE = "Configuring VGE SMU..."
+    TSEP_STATUS_CONFIG_VCE = "Configuring VCE SMU..."
+    TSEP_STATUS_ENABLE_VGE = "Enabling VGE..."
+    TSEP_STATUS_ENABLE_VCE = "Enabling VCE..."
+    TSEP_STATUS_MEASURE = "Measuring VCE buffer..."
+    TSEP_STATUS_DONE = "Temperature measurement complete"
+    TSEP_STATUS_ERROR = "TSEP error"
+
+    TSEP_STATUS_OUTPUTS_CLEARED = "Outputs cleared"
+    TSEP_STATUS_COPIED = "Copied to clipboard"
+
+    TSEP_STATUS_HEATING_PREP = "Preparing heating period..."
+    TSEP_STATUS_HEATING_RUN = "Measuring heating period..."
+    TSEP_STATUS_HEATING_STOP = "Heating measurement stopped by user"
+    TSEP_STATUS_HEATING_DONE = "Heating measurement complete"
+    TSEP_STATUS_HEATING_STOPPING = "Stopping heating measurement..."
+    TSEP_STATUS_HEATING_CLEARED = "Heating plot cleared"
+    TSEP_STATUS_HEATING_EXPORTED = "Heating data exported successfully"
+
+
 # =========================================
 # Defaults & allowed values
 # =========================================
@@ -333,7 +378,7 @@ class MeasurementController:
         if gate_source == GATE_SRC_EXTERNAL:
             self.k24.enable_source()
             delay_s = settings.measurement.gate_delay_s
-            on_status(f"Stabilizing gate ({settings.measurement.gate_delay_s:.0f} s)...")
+            on_status(UI.STATUS_GATE_STABLE.format(t=int(settings.measurement.gate_delay_s)))
             sleep(delay_s)
 
         try:
@@ -359,7 +404,7 @@ class MeasurementController:
                 # Delay between curves (except last one)
                 if i < N:
                     delay_s = settings.measurement.curve_delay_s
-                    on_status(f"Waiting {settings.measurement.curve_delay_s:.0f} s before next curve...")
+                    on_status(UI.STATUS_WAIT_CURVE.format(t=int(settings.measurement.curve_delay_s)))
                     sleep(delay_s)
 
                 on_progress((i / N) * 100.0)
@@ -520,23 +565,23 @@ class TSEPController:
         except Exception:
             pass
         # Configure
-        on_status("Configuring VGE SMU...")
+        on_status(UI.TSEP_STATUS_CONFIG_VGE)
         self._configure_vge(params)
-        on_status("Configuring VCE SMU...")
+        on_status(UI.TSEP_STATUS_CONFIG_VCE)
         # Override the fixed source current with user-controlled mA
         c.vce_source_current_A = params.vce_source_mA / 1000.0
         c.vce_compliance_voltage_V = params.vce_compliance_V
         self._configure_vce(params)
         sleep(c.settle_s)
         # Enable sources: VGE then VCE
-        on_status("Enabling VGE...")
+        on_status(UI.TSEP_STATUS_ENABLE_VGE)
         self.smu_vge.enable_source()
-        on_status("Enabling VCE...")
+        on_status(UI.TSEP_STATUS_ENABLE_VCE)
         self.smu_vce.enable_source()
         # Buffer measurement (fixed count)
         self.smu_vce.config_buffer(c.vce_buffer_count)
         self.smu_vce.source_current = c.vce_source_current_A
-        on_status("Measuring VCE buffer...")
+        on_status(UI.TSEP_STATUS_MEASURE)
         self.smu_vce.start_buffer()
         self.smu_vce.wait_for_buffer()
         # Read mean voltage
@@ -1166,7 +1211,7 @@ class MeasurementGUI:
                 if "heating_setpoint_c" in ts: self.var_setpoint_c.set(str(ts["heating_setpoint_c"]))
             # Derived & sync
             self._update_gate_controls(); self._sync_vge_source(); self._update_connect_state()
-            self._set_status("Settings applied successfully")
+            self._set_status(UI.STATUS_SETTINGS_APPLIED)
         except Exception as e:
             self._show_error("Apply Settings Error", e)
 
@@ -1179,7 +1224,7 @@ class MeasurementGUI:
             if path:
                 with open(path, "w", encoding="utf-8") as f:
                     json.dump(data, f, indent=2)
-                self._set_status("Settings exported successfully")
+                self._set_status(UI.STATUS_SETTINGS_EXPORTED)
         except Exception as e:
             self._show_error("Export Settings Error", e)
 
@@ -1190,7 +1235,7 @@ class MeasurementGUI:
                 with open(path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 self.apply_settings(data)
-                self._set_status("Settings imported successfully")
+                self._set_status(UI.STATUS_SETTINGS_IMPORTED)
         except Exception as e:
             self._show_error("Import Settings Error", e)
 
@@ -1202,16 +1247,18 @@ class MeasurementGUI:
             gpib_devices = [r for r in resources if "GPIB" in r]
             self.gpib_text.config(state="normal"); self.gpib_text.delete(1.0, tk.END)
             if gpib_devices:
-                self.gpib_text.insert(tk.END, "\n".join(gpib_devices)); self._set_status(f"Found {len(gpib_devices)} GPIB device(s)")
+                self.gpib_text.insert(tk.END, "\n".join(gpib_devices))
+                self._set_status(UI.STATUS_SCAN_FOUND.format(n=len(gpib_devices)))
             else:
-                self.gpib_text.insert(tk.END, "No GPIB devices found"); self._set_status("No GPIB devices found")
+                self.gpib_text.insert(tk.END, "No GPIB devices found")
+                self._set_status(UI.STATUS_SCAN_NONE)
             self.gpib_text.config(state="disabled")
         except Exception as e:
             self._show_error("Error scanning GPIB", e)
 
     def connect_tek(self) -> None:
         try:
-            self._set_status("Connecting to Tek371...")
+            self._set_status(UI.STATUS_CONNECTING_TEK)
             addr = self.tek_addr.get(); self.tek371 = Tek371(addr)
             try:
                 idn = self.tek371.id_string()
@@ -1224,13 +1271,13 @@ class MeasurementGUI:
         except Exception as e:
             self.tek_status.config(text="Error", foreground="red")
             self._show_error("Tek371 Connection Error", e)
-            self._set_status("Tek371 connection failed")
+            self._set_status(UI.STATUS_CONNECTION_FAILED)
         finally:
             self._update_connect_state()
 
     def connect_keithley(self) -> None:
         try:
-            self._set_status("Connecting to Keithley 2400...")
+            self._set_status(UI.STATUS_CONNECTING_K)
             addr = self.keithley_addr.get(); self.keithley = Keithley2400(addr)
             try:
                 idn = getattr(self.keithley, "idn", None) or getattr(self.keithley, "id", None)
@@ -1245,7 +1292,7 @@ class MeasurementGUI:
         except Exception as e:
             self.keithley_status.config(text="Error", foreground="red")
             self._show_error("Keithley 2400 Connection Error", e)
-            self._set_status("Keithley connection failed")
+            self._set_status(UI.STATUS_CONNECTION_FAILED)
         finally:
             self._update_connect_state()
 
@@ -1307,7 +1354,7 @@ class MeasurementGUI:
         if self.is_running:
             return
         self._style_axes(); self.fig.tight_layout(); self.canvas.draw();
-        self._set_status("Plot cleared"); self._set_progress(0.0)
+        self._set_status(UI.STATUS_PLOT_CLEARED); self._set_progress(0.0)
 
     def _plot_csv(self, path: Path) -> None:
         try:
@@ -1391,7 +1438,7 @@ class MeasurementGUI:
     def stop_measurement(self) -> None:
         if self.controller:
             self.controller.stop()
-            self._set_status("Stopping measurement...")
+            self._set_status(UI.STATUS_STOPPING)
 
     def browse_folder(self) -> None:
         folder = filedialog.askdirectory()
@@ -1467,18 +1514,18 @@ class MeasurementGUI:
                 def update_ui():
                     self.var_tsep_v_read.set(f"{res.mean_voltage_V:.6f}")
                     self.var_tsep_tj.set(f"{res.tj_celsius:.3f}")
-                    self._set_tsep_status("Temperature measurement complete")
+                    self._set_tsep_status(UI.TSEP_STATUS_DONE)
                 self._post(update_ui)
                 self._last_tsep_result = res
             except Exception as e:
-                self._post(lambda: (self._set_tsep_status("TSEP error"), self._show_error("TSEP Error", e)))
+                self._post(lambda: (self._set_tsep_status(UI.TSEP_STATUS_ERROR), self._show_error("TSEP Error", e)))
         Thread(target=work, daemon=True).start()
 
     def clear_tsep_outputs(self) -> None:
         try:
             self.var_tsep_v_read.set("—")
             self.var_tsep_tj.set("—")
-            self._set_tsep_status("Outputs cleared")
+            self._set_tsep_status(UI.TSEP_STATUS_OUTPUTS_CLEARED)
         except Exception as e:
             self._show_error("Clear Outputs Error", e)
 
@@ -1487,7 +1534,7 @@ class MeasurementGUI:
         try:
             self.root.clipboard_clear()
             self.root.clipboard_append(text)
-            self._set_tsep_status("Copied to clipboard")
+            self._set_tsep_status(UI.TSEP_STATUS_COPIED)
         except Exception as e:
             self._show_error("Clipboard Error", e)
 
@@ -1514,7 +1561,7 @@ class MeasurementGUI:
         self._heat_tj_values = []
         self._style_heat_axes()
         self._draw_setpoint_line()
-        self._set_tsep_status("Heating plot cleared")
+        self._set_tsep_status(UI.TSEP_STATUS_HEATING_CLEARED)
 
     def _update_y_limits_from_data(self) -> None:
         """Set Y-axis limits based on current Tj values, ignoring the setpoint line."""
@@ -1530,7 +1577,7 @@ class MeasurementGUI:
     def _heating_measure_loop(self, params: TSEPParams, duration_s: int, on_status, on_progress):
         ctrl = TSEPController()
         try:
-            on_status("Connecting TSEP instruments...")
+            on_status(UI.TSEP_STATUS_CONNECTING)
             ctrl.smu_vge = Keithley2400(params.vge_gpib)
             ctrl.smu_vce = Keithley2400(params.vce_gpib)
             try:
@@ -1552,7 +1599,7 @@ class MeasurementGUI:
             ctrl.smu_vge.enable_source()
             on_status("Enabling VCE...")
             ctrl.smu_vce.enable_source()
-            on_status("Measuring heating period...")
+            on_status(UI.TSEP_STATUS_HEATING_RUN)
 
             self.heat_start_time = t0 = time.time()
             self._heat_data = []
@@ -1566,7 +1613,7 @@ class MeasurementGUI:
 
             for i in range(duration_s):
                 if self._heat_stop.is_set():
-                    on_status("Heating measurement stopped by user")
+                    on_status(UI.TSEP_STATUS_HEATING_STOP)
                     break
                 try:
                     ctrl.smu_vce.source_current = ctrl._const.vce_source_current_A
@@ -1646,7 +1693,7 @@ class MeasurementGUI:
 
         self.heating_running = True
         self._heat_stop.clear()
-        self._set_tsep_status("Preparing heating period...")
+        self._set_tsep_status(UI.TSEP_STATUS_HEATING_PREP)
         self.btn_heat_start.config(state='disabled')
         self.btn_heat_stop.config(state='normal')
         self.btn_heat_export.config(state='disabled')
@@ -1670,7 +1717,7 @@ class MeasurementGUI:
         def work():
             try:
                 self._heating_measure_loop(p, duration_s, on_status, on_progress)
-                self._post(lambda: self._set_tsep_status("Heating measurement complete"))
+                self._post(lambda: self._set_tsep_status(UI.TSEP_STATUS_HEATING_DONE))
             except Exception:
                 pass
             except Exception as e:
@@ -1688,7 +1735,7 @@ class MeasurementGUI:
         if not self.heating_running:
             return
         self._heat_stop.set()
-        self._set_tsep_status("Stopping heating measurement...")
+        self._set_tsep_status(UI.TSEP_STATUS_HEATING_STOPPING)
 
     def export_heating_csv(self) -> None:
         if not self._heat_data:
@@ -1707,7 +1754,7 @@ class MeasurementGUI:
                                                 filetypes=[("CSV", "*.csv")], initialfile=default_name)
             if path:
                 df.to_csv(path, index=False)
-                self._set_tsep_status("Heating data exported successfully")
+                self._set_tsep_status(UI.TSEP_STATUS_HEATING_EXPORTED)
         except Exception as e:
             self._show_error("CSV Export Error", e)
 
