@@ -54,9 +54,6 @@ class UI:
     K_TEK = "tek371"
     K_K24 = "keithley2400"
 
-    # Banner
-    WARN_CONNECT = "Must connect both equipments to enable start measurement button"
-
     # Status messages (I-V)
     STATUS_CONFIG_SMU = "Configuring Keithley 2400..."
     STATUS_CONFIG_TEK = "Configuring Tek371..."
@@ -64,7 +61,7 @@ class UI:
     STATUS_MEAS = "Measuring curve {i}/{n}..."
     STATUS_STOPPED = "Measurement stopped by user"
     STATUS_MEAN = "Computing mean curve..."
-    STATUS_DONE = "Measurement complete! Data saved to {folder}"
+    STATUS_DONE = "Measurement complete! Files saved"
     STATUS_ERROR = "Measurement error"
 
     # --- TSEP ---
@@ -675,9 +672,6 @@ class MeasurementGUI:
         addrs_label = ttk.Label(conn, text="Instrument Addresses", font=("Helvetica", 10, "bold"))
         addrs_label.grid(row=2, column=0, columnspan=6, sticky=tk.W, pady=(8, 2))
 
-        self.warn_label = ttk.Label(conn, text=UI.WARN_CONNECT, foreground="#8a6d3b", background="#fcf8e3", padding=5)
-        self.warn_label.grid(row=3, column=0, columnspan=6, sticky=tk.W + tk.E, pady=(2, 8))
-
         # Tek371 row
         ttk.Label(conn, text="Tek371:").grid(row=4, column=0, sticky=tk.W)
         self.tek_addr = ttk.Entry(conn, width=25)
@@ -962,11 +956,17 @@ class MeasurementGUI:
         right.rowconfigure(0, weight=1)
         plotf = ttk.Frame(right)
         plotf.grid(row=0, column=0, sticky=tk.N + tk.S + tk.E + tk.W)
-        plotf.columnconfigure(0, weight=1); plotf.rowconfigure(0, weight=1)
+        plotf.columnconfigure(0, weight=1)
+        plotf.rowconfigure(0, weight=1)
+        plotf.rowconfigure(1, weight=0)
         self.fig_heat, self.ax_heat = plt.subplots(figsize=(7, 5), dpi=100)
         self._style_heat_axes()
         self.canvas_heat = FigureCanvasTkAgg(self.fig_heat, master=plotf)
         self.canvas_heat.get_tk_widget().grid(row=0, column=0, sticky=tk.N + tk.S + tk.E + tk.W)
+        toolbar_frame_heat = ttk.Frame(plotf)
+        toolbar_frame_heat.grid(row=1, column=0, sticky=tk.W)
+        self.toolbar_heat = NavigationToolbar2Tk(self.canvas_heat, toolbar_frame_heat)
+        self.toolbar_heat.update()
         self.fig_heat.tight_layout()
         # Single scatter artist for live Tj points
         self.heat_scatter = self.ax_heat.scatter([], [], s=12, c='red', marker='o', label='Tj')
@@ -1056,14 +1056,6 @@ class MeasurementGUI:
         need_k = (src_mode == GATE_SRC_EXTERNAL)
         ok = (self.tek371 is not None) and ((self.keithley is not None) if need_k else True)
         self.start_btn.config(state="normal" if ok else "disabled")
-        try:
-            if need_k:
-                self.warn_label.config(text=UI.WARN_CONNECT)
-            else:
-                self.warn_label.config(text="Must connect Tek371 to enable start measurement button")
-        except Exception:
-            pass
-        self.warn_label.grid_remove() if ok else self.warn_label.grid()
         # Sync TSEP VGE address entry (disabled) with I-V address
         try:
             self.tsep_addr_vge_entry.config(state="normal")
@@ -1112,6 +1104,9 @@ class MeasurementGUI:
             "a": self.var_tsep_a.get(),
             "b": self.var_tsep_b.get(),
             "c": self.var_tsep_c.get(),
+            "heating_minutes": self.var_heat_minutes.get(),
+            "heating_setpoint_c": self.var_setpoint_c.get(),
+
         }
         return {
             "addresses": addrs,
@@ -1167,6 +1162,8 @@ class MeasurementGUI:
                 if "a" in ts: self.var_tsep_a.set(str(ts["a"]))
                 if "b" in ts: self.var_tsep_b.set(str(ts["b"]))
                 if "c" in ts: self.var_tsep_c.set(str(ts["c"]))
+                if "heating_minutes" in ts: self.var_heat_minutes.set(str(ts["heating_minutes"]))
+                if "heating_setpoint_c" in ts: self.var_setpoint_c.set(str(ts["heating_setpoint_c"]))
             # Derived & sync
             self._update_gate_controls(); self._sync_vge_source(); self._update_connect_state()
             self._set_status("Settings applied successfully")
@@ -1182,7 +1179,7 @@ class MeasurementGUI:
             if path:
                 with open(path, "w", encoding="utf-8") as f:
                     json.dump(data, f, indent=2)
-                self._set_status(f"Settings exported to {path}")
+                self._set_status("Settings exported successfully")
         except Exception as e:
             self._show_error("Export Settings Error", e)
 
@@ -1193,7 +1190,7 @@ class MeasurementGUI:
                 with open(path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 self.apply_settings(data)
-                self._set_status(f"Settings imported from {path}")
+                self._set_status("Settings imported successfully")
         except Exception as e:
             self._show_error("Import Settings Error", e)
 
@@ -1710,7 +1707,7 @@ class MeasurementGUI:
                                                 filetypes=[("CSV", "*.csv")], initialfile=default_name)
             if path:
                 df.to_csv(path, index=False)
-                self._set_tsep_status(f"Heating data exported to {path}")
+                self._set_tsep_status("Heating data exported successfully")
         except Exception as e:
             self._show_error("CSV Export Error", e)
 
